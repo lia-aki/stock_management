@@ -2,52 +2,51 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>rosenliadoll 在庫管理</title>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <style>
-        body { font-family: "Helvetica Neue", Arial, sans-serif; background-color: #f0f2f5; margin: 0; padding: 15px; }
+        body { font-family: "Helvetica Neue", Arial, sans-serif; background-color: #f0f2f5; margin: 0; padding: 10px; }
         
         .page-title {
             text-align: center; font-size: 24px; font-weight: bold; color: #333;
             margin: 5px 0 15px 0; letter-spacing: 2px;
         }
         .page-title::after {
-            content: ''; display: block; width: auto; height: 2px; background: #5B9BD5; margin: 5px auto 0;
+            content: ''; display: block; width: 80px; height: 3px; background: #5B9BD5; margin: 5px auto 0;
         }
 
-        /* コンテナ：画面からはみ出さない設定 */
         .container { 
             max-width: 100%; 
             background: white; 
             padding: 15px; 
             border-radius: 8px; 
             box-shadow: 0 2px 10px rgba(0,0,0,0.1); 
-            overflow: hidden; /* はみ出し防止 */
+            overflow-x: auto; /* スマホで横スクロールを可能にする */
         }
         
         #login-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); display: flex; justify-content: center; align-items: center; z-index: 1000; }
         .login-box { background: white; padding: 40px; border-radius: 12px; text-align: center; width: 300px; }
         
-        /* テーブル：画面幅いっぱいに広がり、かつ突き抜けない設定 */
         table { 
             width: 100%; 
             border-collapse: collapse; 
             margin-top: 15px; 
             font-size: 11px; 
-            table-layout: fixed; /* これが重要：列幅を固定し、親要素に合わせる */
+            table-layout: fixed; 
+            min-width: 1000px; /* スマホで表が潰れないよう最小幅を設定 */
         }
         th, td { border: 1px solid #ccc; padding: 2px; position: relative; overflow: hidden; }
         th { font-weight: bold; text-align: center; }
         
-        /* 入力欄もはみ出さないように調整 */
         input { width: 100%; border: 1px solid transparent; padding: 4px; font-size: 11px; box-sizing: border-box; }
         input:focus { border-color: #007bff; outline: none; background: #f8fbff; }
 
         .resizer { position: absolute; right: 0; top: 0; height: 100%; width: 4px; cursor: col-resize; user-select: none; z-index: 1; }
         .resizer:hover { background: #5B9BD5; }
 
-        /* 色設定 */
+        /* 元の色設定を完全に維持 */
         .col-id-header { background-color: #333 !important; color: white !important; }
         .col-blue { background-color: #5B9BD5; color: white; }
         .col-yellow { background-color: #FFC000; color: black; }
@@ -58,12 +57,18 @@
         .is-modified { background-color: #fff9db !important; }
 
         .toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 10px; }
-        .btn { padding: 6px 12px; cursor: pointer; border: none; border-radius: 4px; font-weight: bold; transition: 0.2s; font-size: 12px; }
+        .btn { padding: 8px 12px; cursor: pointer; border: none; border-radius: 4px; font-weight: bold; transition: 0.2s; font-size: 13px; }
         .btn-add { background-color: #28a745; color: white; }
         .btn-save { background-color: #007bff; color: white; }
         .btn-logout { background-color: #6c757d; color: white; }
         
-        #total-summary { margin-top: 15px; text-align: right; font-size: 16px; font-weight: bold; padding: 10px; background: #fff; border-top: 2px solid #007bff; }
+        #total-summary { margin-top: 15px; text-align: right; font-size: 18px; font-weight: bold; padding: 10px; background: #fff; border-top: 2px solid #007bff; }
+
+        /* スマホ向け調整：ボタンを大きくし、横スクロールを案内 */
+        @media screen and (max-width: 600px) {
+            .btn { flex: 1; text-align: center; padding: 12px 5px; font-size: 14px; }
+            .toolbar > div { width: 100%; display: flex; gap: 5px; }
+        }
     </style>
 </head>
 <body>
@@ -82,42 +87,42 @@
     <div class="toolbar">
         <div class="info-text" style="font-size: 13px;">操作担当者: <strong id="user-display"></strong></div>
         <div>
-            <button id="btn-new-period" class="btn" style="display:none; background-color: #e67e22; color: white;" onclick="startNewPeriod()">🔄 今期作成</button>
-            <button class="btn btn-add" onclick="addRow()">+ 行追加</button>
+            <button id="btn-new-period" class="btn" style="display:none; background-color: #e67e22; color: white;" onclick="startNewPeriod()">🔄 今期</button>
+            <button class="btn btn-add" onclick="addRow()">+ 追加</button>
             <button class="btn btn-save" onclick="saveData()">💾 保存</button>
             <button class="btn" style="background-color: #217346; color: white;" onclick="exportToExcel()">📊 Excel</button>
-            <button class="btn btn-logout" onclick="logout()">ログアウト</button>
+            <button class="btn btn-logout" onclick="logout()">切断</button>
         </div>
     </div>
 
     <table id="main-table">
         <thead>
             <tr>
-                <th class="col-id-header" style="width: 3%;">ID</th>
-                <th class="col-blue" style="width: 5%;">サイズ</th>
-                <th class="col-blue" style="width: 14%;">商品名</th>
-                <th class="col-blue" style="width: 6%;">カラー</th>
-                <th class="col-blue" style="width: 7%;">D定価</th>
-                <th class="col-blue" style="width: 7%;">S定価</th>
-                <th class="col-yellow" style="width: 7%;">受取額</th>
-                <th class="col-purple" style="width: 5%;">前在庫</th>
-                <th class="col-purple" style="width: 5%;">後在庫</th>
-                <th class="col-purple" style="width: 5%;">精在庫</th>
-                <th class="col-purple" style="width: 6%;">精算日</th>
-                <th class="col-yellow" style="width: 4%;">販数</th>
-                <th class="col-yellow" style="width: 7%;">総受取</th>
-                <th class="col-purple" style="width: 4%;">入数</th>
-                <th class="col-purple" style="width: 6%;">入荷日</th>
-                <th class="col-blue" style="width: 8%;">備考</th>
-                <th style="background: #eee; width: 7%;">更新</th>
-                <th style="background: #eee; width: 6%;">操作</th>
+                <th class="col-id-header" style="width: 40px;">ID</th>
+                <th class="col-blue" style="width: 60px;">サイズ</th>
+                <th class="col-blue" style="width: 150px;">商品名</th>
+                <th class="col-blue" style="width: 80px;">カラー</th>
+                <th class="col-blue" style="width: 80px;">D定価</th>
+                <th class="col-blue" style="width: 80px;">S定価</th>
+                <th class="col-yellow" style="width: 80px;">受取額</th>
+                <th class="col-purple" style="width: 60px;">前在庫</th>
+                <th class="col-purple" style="width: 60px;">後在庫</th>
+                <th class="col-purple" style="width: 60px;">精在庫</th>
+                <th class="col-purple" style="width: 90px;">精算日</th>
+                <th class="col-yellow" style="width: 50px;">販数</th>
+                <th class="col-yellow" style="width: 90px;">総受取</th>
+                <th class="col-purple" style="width: 50px;">入数</th>
+                <th class="col-purple" style="width: 90px;">入荷日</th>
+                <th class="col-blue" style="width: 120px;">備考</th>
+                <th style="background: #eee; width: 80px;">更新</th>
+                <th style="background: #eee; width: 80px;">操作</th>
             </tr>
         </thead>
         <tbody id="table-body"></tbody>
     </table>
 
     <div id="total-summary">
-        合計: <span id="grand-total" style="color: #dc3545; font-size: 20px;">0</span> 円
+        合計: <span id="grand-total" style="color: #dc3545; font-size: 22px;">0</span> 円
     </div>
 </div>
 
@@ -187,6 +192,7 @@
 
         let html = `<td><input type="text" class="col-id" value="${data.id || ''}" readonly style="background:#f8f9fa; text-align:center;"></td>`;
         dbColumns.forEach((col, index) => {
+            // 色分けロジックを維持
             let bg = ([5, 10, 11].includes(index)) ? 'cell-yellow' : (([6, 7, 8, 9, 12, 13].includes(index)) ? 'cell-purple' : 'cell-blue');
             const isCalc = [4, 5, 10, 11].includes(index);
             const isStaff = [8, 9, 14].includes(index);
@@ -194,7 +200,7 @@
             html += `<td class="${bg}"><input type="text" class="col-${col}" value="${data[col] || ''}" ${ro} oninput="calculate(this.parentElement.parentElement)"></td>`;
         });
         html += `<td style="font-size:9px; text-align:center;">${data.last_updated_by || ''}<br>${data.updated_at ? new Date(data.updated_at).toLocaleDateString() : ''}</td>`;
-        html += `<td style="text-align:center;">${isAdmin ? '<button style="font-size:10px;" onclick="copyRow(this)">複</button><button style="font-size:10px;" onclick="deleteRow(this)">消</button>' : '-'}</td>`;
+        html += `<td style="text-align:center;">${isAdmin ? '<button style="padding:2px 5px; margin:1px;" onclick="copyRow(this)">複</button><button style="padding:2px 5px; margin:1px;" onclick="deleteRow(this)">消</button>' : '-'}</td>`;
         tr.innerHTML = html;
         tbody.appendChild(tr);
     }
@@ -235,12 +241,14 @@
         if (error) alert(error.message); else { alert("保存成功"); loadData(); }
     }
 
+    // Excel出力ロジックを「input値取得」に修正
     function exportToExcel() {
         const table = document.getElementById("main-table");
         const headers = Array.from(table.querySelectorAll("thead th")).map(th => th.innerText).slice(0, -2);
         const rows = Array.from(table.querySelectorAll("tbody tr")).map(tr => {
             return Array.from(tr.querySelectorAll("input")).slice(0, headers.length).map(i => {
-                return (i.value !== "" && !isNaN(i.value)) ? Number(i.value) : i.value;
+                const val = i.value;
+                return (val !== "" && !isNaN(val)) ? Number(val) : val;
             });
         });
         const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
