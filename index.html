@@ -76,7 +76,9 @@
 <div id="login-overlay">
     <div class="login-box">
         <h2 style="margin-bottom:20px;">Rosenliadoll 在庫管理</h2>
-        <input type="password" id="pass-input" placeholder="パスコードを入力" style="border: 1px solid #ccc; width: 80%; padding: 10px; margin-bottom: 20px; text-align: center;">
+        <input type="password" id="pass-input" placeholder="パスコードを入力" 
+       style="border: 1px solid #ccc; width: 80%; padding: 10px; margin-bottom: 20px; text-align: center;"
+       onkeydown="if(event.key==='Enter') login()">
         <button class="btn btn-save" style="width: 87%;" onclick="login()">ログイン</button>
     </div>
 </div>
@@ -91,7 +93,7 @@
             <button class="btn btn-add" onclick="addRow()">+ 追加</button>
             <button class="btn btn-save" onclick="saveData()">💾 保存</button>
             <button class="btn" style="background-color: #217346; color: white;" onclick="exportToExcel()">📊 Excel</button>
-            <button class="btn btn-logout" onclick="logout()">切断</button>
+            <button class="btn btn-logout" onclick="logout()">ログアウト</button>
         </div>
     </div>
 
