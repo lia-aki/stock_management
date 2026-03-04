@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>rosenliadoll 在庫管理</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <style>
+        body { font-family: "Helvetica Neue", Arial, sans-serif; background-color: #f0f2f5; margin: 0; padding: 20px; }
+        
+        /* タイトルのスタイル：画面上部中央 */
+        .page-title {
+            text-align: center;
+            font-size: 28px;
+            font-weight: bold;
+            color: #333;
+            margin: 10px 0 25px 0;
+            letter-spacing: 2px;
+            position: relative;
+            display: block;
+        }
+        .page-title::after {
+            content: '';
+            display: block;
+            height: 3px;
+            background: #5B9BD5;
+            margin: 8px auto 0;
+        }
+
+        .container { max-width: 100%; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); overflow-x: auto; }
+        #login-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); display: flex; justify-content: center; align-items: center; z-index: 1000; }
+        .login-box { background: white; padding: 40px; border-radius: 12px; text-align: center; width: 300px; }
+        
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 12px; min-width: 1400px; }
+        th { padding: 10px; border: 1px solid #ccc; font-weight: bold; text-align: center; position: relative; }
+        td { border: 1px solid #eee; padding: 2px; }
+        input { width: 95%; border: 1px solid transparent; padding: 6px; font-size: 12px; }
+        input:focus { border-color: #007bff; outline: none; background: #f8fbff; }
+
+        .col-id-header { background-color: #333 !important; color: white !important; }
+        .col-blue { background-color: #5B9BD5; color: white; }
+        .col-yellow { background-color: #FFC000; color: black; }
+        .col-purple { background-color: #B085D6; color: white; }
+        .cell-blue { background-color: #DEEAF6; }
+        .cell-yellow { background-color: #FFF2CC; }
+        .cell-purple { background-color: #E2EFDA; }
+        
+        .is-modified { background-color: #fff9db !important; }
+
+        .toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+        .btn { padding: 8px 16px; cursor: pointer; border: none; border-radius: 4px; font-weight: bold; transition: 0.2s; margin-left: 5px; }
+        .btn-add { background-color: #28a745; color: white; }
+        .btn-save { background-color: #007bff; color: white; }
+        .btn-new-period { background-color: #e67e22; color: white; }
+        .btn-logout { background-color: #6c757d; color: white; }
+        
+        #total-summary { margin-top: 20px; text-align: right; font-size: 18px; font-weight: bold; padding: 15px; background: #fff; border-top: 2px solid #007bff; }
+    </style>
+</head>
+<body>
+
+<div id="login-overlay">
+    <div class="login-box">
+        <h2 style="margin-bottom:20px;">Rosenliadoll 在庫管理</h2>
+        <input type="password" id="pass-input" placeholder="パスコードを入力" style="border: 1px solid #ccc; width: 80%; padding: 10px; margin-bottom: 20px; text-align: center;">
+        <button class="btn btn-save" style="width: 87%;" onclick="login()">ログイン</button>
+    </div>
+</div>
+
+<div class="container" id="app-container" style="display:none;">
+    <div class="page-title">Rosenliadoll 在庫管理</div>
+
+    <div class="toolbar">
+        <div class="info-text">操作担当者: <strong id="user-display"></strong></div>
+        <div>
+            <button id="btn-new-period" class="btn btn-new-period" style="display:none;" onclick="startNewPeriod()">🔄 今期作成</button>
+            <button class="btn btn-add" onclick="addRow()">+ 行を追加</button>
+            <button class="btn btn-save" onclick="saveData()">💾 変更を保存</button>
+            <button class="btn" style="background-color: #217346; color: white;" onclick="exportToExcel()">📊 Excel出力</button>
+            <button class="btn btn-logout" onclick="logout()">ログアウト</button>
+        </div>
+    </div>
+
+    <table id="main-table">
+        <thead>
+            <tr>
+                <th class="col-id-header" style="width: 60px;">ID</th>
+                <th class="col-blue">サイズ</th><th class="col-blue">商品名</th><th class="col-blue">カラー</th>
+                <th class="col-blue">ディーラー定価</th><th class="col-blue">ショップ定価</th><th class="col-yellow">受取金額</th>
+                <th class="col-purple">前回在庫</th><th class="col-purple">入荷後在庫</th><th class="col-purple">精算時在庫</th>
+                <th class="col-purple">精算日</th><th class="col-yellow">販売数</th><th class="col-yellow">総受取金額</th>
+                <th class="col-purple">入荷数</th><th class="col-purple">入荷日</th><th class="col-blue">備考</th>
+                <th style="background: #eee; width: 130px;">最終更新</th><th style="background: #eee; width: 80px;">操作</th>
+            </tr>
+        </thead>
+        <tbody id="table-body"></tbody>
+    </table>
+
+    <div id="total-summary">
+        総受取額 合計: <span id="grand-total" style="color: #dc3545; font-size: 24px;">0</span> 円
+    </div>
+</div>
+
+<script>
+    const SUPABASE_URL = 'https://eiladnaqqcddtkfqypvb.supabase.co';
+    const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVpbGFkbmFxcWNkZHRrZnF5cHZiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzNTI1MjAsImV4cCI6MjA4NjkyODUyMH0.ypTl6LS3wvjc_24-eCNOxvvZVOAQ6F_PGhoXfHWW8pY';
+    const myAppClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    let currentUserName = "";
+    const dbColumns = [
+        'size', 'product_name', 'color', 'dealer_price', 'shop_price', 
+        'received_amount', 'prev_stock', 'stock_after_arrival', 'current_stock', 'settlement_date', 
+        'sales_quantity', 'total_received', 'arrival_quantity', 'arrival_date', 'remarks'
+    ];
+
+    // --- ページ読み込み時にログイン状態を復元 ---
+    window.onload = function() {
+        const savedAuth = localStorage.getItem('STOCK_SYSTEM_AUTH');
+        if (savedAuth) {
+            const authData = JSON.parse(savedAuth);
+            currentUserName = authData.userName;
+            setupUI();
+        }
+    };
+
+    async function login() {
+        const code = document.getElementById('pass-input').value;
+        const { data, error } = await myAppClient.from('passcodes').select('user_name').eq('code', code).maybeSingle();
+        
+        if (error || !data) { 
+            alert('パスコードが正しくありません。'); 
+            return; 
+        }
+        
+        currentUserName = data.user_name;
+        localStorage.setItem('STOCK_SYSTEM_AUTH', JSON.stringify({ userName: currentUserName }));
+        setupUI();
+    }
+
+    // ログイン後の画面表示をまとめた関数
+    function setupUI() {
+        document.getElementById('login-overlay').style.display = 'none';
+        document.getElementById('app-container').style.display = 'block';
+        document.getElementById('user-display').innerText = currentUserName;
+        
+        if (currentUserName === "管理者") {
+            document.getElementById('btn-new-period').style.display = 'inline-block';
+        }
+        loadData();
+    }
+
+    function logout() {
+        if (confirm('ログアウトしますか？')) {
+            localStorage.removeItem('STOCK_SYSTEM_AUTH');
+            location.reload();
+        }
+    }
+
+    async function loadData() {
+        const { data, error } = await myAppClient.from('inventory').select('*').order('id', { ascending: true });
+        if (error) return;
+        const tbody = document.getElementById('table-body');
+        tbody.innerHTML = '';
+        data.forEach(item => renderRow(item));
+        updateGrandTotal();
+    }
+
+    function renderRow(data = {}) {
+        const tbody = document.getElementById('table-body');
+        const tr = document.createElement('tr');
+        const isAdmin = (currentUserName === "管理者");
+        if (data.id) tr.dataset.id = data.id;
+
+        let html = `<td><input type="text" class="col-id" value="${data.id || ''}" readonly style="background:#f8f9fa; text-align:center;"></td>`;
+        
+        dbColumns.forEach((col, index) => {
+            let bgClass = ([5, 10, 11].includes(index)) ? 'cell-yellow' : (([6, 7, 8, 9, 12, 13].includes(index)) ? 'cell-purple' : 'cell-blue');
+            const isCalc = [4, 5, 10, 11].includes(index);
+            const isStaffEditable = [8, 9, 14].includes(index);
+            let readonlyAttr = (isCalc || (!isAdmin && !isStaffEditable)) ? 'readonly style="background:#e9ecef;"' : '';
+
+            html += `<td class="${bgClass}"><input type="text" class="col-${col}" value="${data[col] || ''}" ${readonlyAttr} oninput="calculate(this.parentElement.parentElement)"></td>`;
+        });
+
+        html += `<td style="font-size:10px; text-align:center;">${data.last_updated_by || ''}<br>${data.updated_at ? new Date(data.updated_at).toLocaleString() : ''}</td>`;
+        html += `<td style="text-align:center;">${isAdmin ? '<button onclick="copyRow(this)">複写</button><button onclick="deleteRow(this)">消去</button>' : '-'}</td>`;
+        
+        tr.innerHTML = html;
+        tbody.appendChild(tr);
+    }
+
+    function calculate(row) {
+        row.classList.add('is-modified');
+        const getV = (c) => parseFloat(row.querySelector(`.col-${c}`).value) || 0;
+        const setV = (c, v) => { row.querySelector(`.col-${c}`).value = v === null ? "" : Math.round(v); };
+
+        const dp = getV('dealer_price');
+        const ps = getV('prev_stock');
+        const aq = getV('arrival_quantity');
+        const cs = row.querySelector('.col-current_stock').value === "" ? null : getV('current_stock');
+
+        if (dp) { setV('shop_price', dp * 1.1); setV('received_amount', dp * 0.8); }
+        
+        const sa = ps + aq;
+        setV('stock_after_arrival', sa);
+
+        if (cs !== null) {
+            const sq = sa - cs;
+            setV('sales_quantity', sq);
+            setV('total_received', (dp * 0.8) * sq);
+        }
+        updateGrandTotal();
+    }
+
+    function updateGrandTotal() {
+        let total = 0;
+        document.querySelectorAll('.col-total_received').forEach(i => total += parseFloat(i.value) || 0);
+        document.getElementById('grand-total').innerText = Math.round(total).toLocaleString();
+    }
+
+    async function saveData() {
+        const modified = document.querySelectorAll('.is-modified');
+        if (modified.length === 0) return alert("変更がありません");
+        if (!confirm("変更を保存しますか？")) return;
+
+        const ts = new Date().toISOString();
+        const data = Array.from(modified).map(tr => {
+            let obj = { id: parseInt(tr.querySelector('.col-id').value), last_updated_by: currentUserName, updated_at: ts };
+            dbColumns.forEach((col, i) => { obj[col] = tr.querySelectorAll('input')[i+1].value; });
+            return obj;
+        });
+
+        const { error } = await myAppClient.from('inventory').upsert(data);
+        if (error) alert(error.message); else { alert("保存成功"); loadData(); }
+    }
+
+    async function startNewPeriod() {
+        if (!confirm('【重要】今期作成を実行しますか？ 現在のデータは inventory_bk にバックアップされます。')) return;
+        
+        try {
+            const { data: current, error: fErr } = await myAppClient.from('inventory').select('*');
+            if (fErr) throw fErr;
+
+            const { error: bErr } = await myAppClient.from('inventory_bk').insert(current.map(i => ({...i, backup_at: new Date().toISOString()})));
+            if (bErr) throw bErr;
+
+            const next = current.map(i => ({
+                ...i,
+                prev_stock: i.current_stock,
+                stock_after_arrival: i.current_stock,
+                current_stock: null, settlement_date: "", arrival_quantity: null, arrival_date: "", remarks: "", sales_quantity: null, total_received: null,
+                updated_at: new Date().toISOString(), last_updated_by: currentUserName
+            }));
+
+            const { error: uErr } = await myAppClient.from('inventory').upsert(next);
+            if (uErr) throw uErr;
+
+            alert("今期作成完了");
+            loadData();
+        } catch (e) { alert("エラー: " + e.message); }
+    }
+
+    function addRow() {
+        const ids = Array.from(document.querySelectorAll('.col-id')).map(i => parseInt(i.value) || 0);
+        const nextId = (ids.length ? Math.max(...ids) : 0) + 1;
+        renderRow({ id: nextId });
+        document.getElementById('table-body').lastElementChild.classList.add('is-modified');
+    }
+
+    function copyRow(btn) {
+        const row = btn.parentElement.parentElement;
+        const ids = Array.from(document.querySelectorAll('.col-id')).map(i => parseInt(i.value) || 0);
+        const nextId = Math.max(...ids) + 1;
+        const data = { id: nextId };
+        dbColumns.forEach((col, i) => { data[col] = row.querySelectorAll('input')[i+1].value; });
+        renderRow(data);
+        document.getElementById('table-body').lastElementChild.classList.add('is-modified');
+    }
+
+    async function deleteRow(btn) {
+        const tr = btn.parentElement.parentElement;
+        const id = tr.querySelector('.col-id').value;
+        if (id && confirm("削除しますか？")) {
+            await myAppClient.from('inventory').delete().eq('id', id);
+            tr.remove();
+            updateGrandTotal();
+        }
+    }
+
+    function exportToExcel() {
+        const table = document.getElementById("main-table");
+        const wb = XLSX.utils.table_to_book(table);
+        XLSX.writeFile(wb, `rosenliadoll_在庫管理_${new Date().toISOString().split('T')[0]}.xlsx`);
+    }
+</script>
+</body>
+</html>
